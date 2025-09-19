@@ -106,7 +106,7 @@ ptype=2: 删除本地文件。
 
 ptype=3: 将本地文件移动到备份目录。
 
-# ftpgetfiles.cpp
+# ftpgetfiles
 
 用于从FTP服务器下载文件到本地目录。
 
@@ -196,7 +196,9 @@ ptype=2: 删除服务器上的文件
 
 ptype=3: 将服务器文件移动到备份目录
 
-# tcpgetfiles.cpp，采用tcp协议，实现文件下载的客户端。
+# tcpgetfiles
+
+采用tcp协议，实现文件下载的客户端。
 
 ## 核心工作流程
 
@@ -262,7 +264,9 @@ c.recvfile 函数
 
 下载完成后，使用 setmtime 设置本地文件的修改时间，与服务器端文件保持一致。
 
-# tcpputfiles.cpp，采用tcp协议，实现文件上传的客户端。
+# tcpputfiles
+
+采用tcp协议，实现文件上传的客户端。
 
 ## 核心工作流程
 
@@ -368,7 +372,9 @@ delayed 计数器记录已发送但未收到确认的文件数量。
 
 支持文件名匹配 (starg.matchname)。
 
-# fileserver.cpp，文件传输的服务端。
+# fileserver
+
+文件传输的服务端。
 
 ## 关键组件
 
@@ -456,3 +462,152 @@ _tcpputfiles(): 执行文件下载任务
 定期发送心跳报文保持连接活跃
 
 检测连接状态并及时处理断开情况
+
+# dminingoracle
+
+数据中心的公共功能模块，用于从Oracle数据库源表抽取数据，生成xml文件。
+
+## 关键组件
+
+1. 参数结构体 (st_arg)
+
+- 数据库的连接参数
+- 数据库的字符集
+- 从数据源数据库抽取数据的SQL语句
+- 抽取数据的SQL语句输出结果集字段名
+- 抽取数据的SQL语句输出结果集字段的长度
+- 输出xml文件的前缀
+- 输出xml文件的后缀
+- 输出xml文件存放的目录
+- 输出xml文件最大记录数
+- 程序运行的时间区间
+- 递增字段名
+- 已抽取数据的递增字段最大值存放的文件
+- 已抽取数据的递增字段最大值存放的数据库的连接参数
+- 进程心跳的超时时间
+- 进程名
+
+这个结构体定义了数据抽取的所有配置参数。
+
+2. 核心函数
+
+_dminingoracle(): 数据抽取的主业务逻辑
+
+readincfield(): 读取增量字段的最大值
+
+writeincfield(): 写入增量字段的最大值
+
+instarttime(): 判断当前时间是否在允许运行的时间区间内
+
+_xmltoarg(): 解析XML格式的配置参数
+
+EXIT(): 进程退出函数，负责资源清理
+
+## 核心工作流程
+
+1. 初始化阶段
+
+2. 数据抽取流程 (_dminingoracle函数)
+
+a.准备SQL语句:
+
+使用预编译的SQL语句
+
+如果是增量抽取，绑定输入参数（已抽取数据的递增字段的最大值）
+
+b.绑定结果集变量:
+
+根据字段长度数组绑定输出变量
+
+支持动态字段映射
+
+c.执行SQL查询:
+
+执行抽取数据的SQL语句
+
+更新进程心跳
+
+d.处理结果集并生成XML文件:
+
+遍历结果集中的每一行记录
+
+将每个字段的值写入XML文件
+
+控制每个XML文件的记录数（通过maxcount参数）
+
+使用临时文件机制确保文件写入的原子性
+
+e.更新增量字段的最大值:
+
+如果是增量抽取，更新递增字段的最大值
+
+将更新后的最大值保存到文件或数据库
+
+3. 增量抽取机制
+
+通过readincfield()函数读取上次抽取的增量字段最大值
+
+通过writeincfield()函数保存本次抽取的增量字段最大值
+
+支持文件和数据库两种方式存储增量字段最大值
+
+4. 时间控制
+
+通过instarttime()函数检查当前时间是否在允许运行的时间区间内
+
+通常在业务低峰期执行数据抽取操作，减少对数据库性能的影响
+
+# xmltodb.cpp
+
+共享平台的公共功能模块，用于把xml文件入库到Oracle的表中。
+
+## 核心数据结构
+1. st_arg： 存储程序运行的全局参数。
+
+- connstr, charset： 数据库连接参数。
+- inifilename： 核心规则配置文件路径，定义了不同 XML 如何对应不同表。
+- xmlpath, xmlpathbak, xmlpatherr： 分别存放待处理、已处理备份、处理失败的 XML 文件的目录。
+- timetvl： 处理间隔，体现了其作为守护进程的特性。
+- pname： 进程名，用于心跳检测。
+
+2. st_xmltotable 和 vxmltotable： 存储从 inifilename 加载的业务规则。这是程序灵活性的关键。
+
+- filename： XML 文件名匹配规则（支持通配符）。
+- tname： 目标数据库表名。
+- uptbz： 更新标志（1=存在则更新，2=仅插入不存在记录）。
+- execsql： 处理 XML 前执行的 SQL 语句（可用于清理临时表等）。
+
+## 关键模块与函数分析
+
+1. 主循环 (_xmltodb())
+
+这是程序的调度中心，实现了一个生产者-消费者模型：
+
+- 生产者： dir.opendir() 和 dir.readdir()，定期扫描 starg.xmlpath 目录，产生待处理的 XML 文件列表。
+- 消费者： _xmltodb(fullfilename, filename) 函数，消费（处理）每一个 XML 文件。
+- 心跳： pactive.uptatime() 在关键点更新心跳，防止程序被监控系统误杀。
+- 休眠： 当没有文件处理时，睡眠 starg.timetvl 秒，避免空耗 CPU。
+
+2. 单文件处理核心 (_xmltodb(const string&, const string&))
+这是业务逻辑的核心，处理一个 XML 文件的完整流程如下：
+
+1. 查找规则 (findxmltotable): 根据当前 XML 文件名，从 vxmltotable 容器中找到匹配的入库规则 (stxmltotable)。
+2. 获取表结构 (tcols.allcols(), tcols.pkcols()): 连接到数据库，查询目标表的所有字段 (m_vallcols) 和主键信息 (pkseq)。这是实现动态 SQL 的基础。
+3. 拼接 SQL (crtsql()): 基于表结构动态生成两条 SQL 语句：
+- strinsertsql: 完整的 INSERT 语句。
+- strupdatesql (如果 uptbz==1)： 完整的 UPDATE 语句。SET 部分包含非主键字段，WHERE 部分包含所有主键字段。
+4. 准备语句和绑定变量 (preparesql()):
+- 为存储字段值的数组 vcolvalue 分配内存。
+- 创建 sqlstatement 对象 (stmtins, stmtupt)。
+- 将 vcolvalue 数组的每个元素与 SQL 语句中的占位符 (:1, :2...) 进行绑定。这里非常重要，它避免了 SQL 注入风险并提高了性能。
+5. 执行前导 SQL (execsql()): 如果规则中配置了 execsql，则在此执行。
+6. 读取和解析 XML 文件:
+- 逐行读取 XML 文件（每行应为一条完整记录，如 <obtid>58015</obtid>...<keyid>6127135</keyid>）。
+- splitbuffer(): 解析每一行。使用 getxmlbuffer 根据字段名提取值，并对 date 和 number 类型进行清洗（提取纯数字字符）。
+- 将解析出的值存入 vcolvalue 数组。由于之前已经绑定了变量，vcolvalue 中的值就是即将执行的 SQL 的参数。
+7. 执行 SQL:
+- 首先尝试 stmtins.execute() (插入)。
+- 如果插入失败且错误是唯一性约束冲突 (rc() == 1) 且 规则允许更新 (uptbz == 1)，则执行 stmtupt.execute() (更新)。
+- 处理成功则计数 (inscount, uptcount)。
+- 处理失败则写日志。如果是数据库连接类严重错误，则返回错误码终止程序。
+8. 提交与文件移动: 处理完一个文件中的所有记录后，提交事务 (conn.commit())，并根据处理结果将文件移动到备份或错误目录 (xmltobakerr)。
