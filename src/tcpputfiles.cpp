@@ -337,6 +337,7 @@ bool _tcpputfiles(bool &bcontinue)
             // xxxxxxxxxxxxxxx logfile.write("strrecvbuffer=%s\n",strrecvbuffer.c_str());
 
             // 处理服务端的确认报文（删除本地文件或把本地文件移动到备份目录）。
+            delayed--;
             ackmessage(strrecvbuffer);
         }
     }
